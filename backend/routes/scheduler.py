@@ -7,11 +7,10 @@ from flask import Blueprint, request, jsonify
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
-from db import query
 import json
-from utils.ssh_push import fetch_running_config, push_config_to_device
+from db import query
+from utils.ssh_push import fetch_running_config
 from utils.nlp_engine import analyze_config, RULES
-from utils.nlp_engine import analyze_config
 from routes.policies import get_enabled_rule_ids
 from routes.audits import _process_anomalies, _auto_resolve
 import datetime
@@ -22,18 +21,17 @@ scheduler = BackgroundScheduler(timezone="Africa/Algiers", daemon=True)
 
 def _run_scheduled_audit(device_id: int, schedule_id: int):
     """Fonction exécutée par APScheduler — lance un audit automatique."""
+    audit_id = None
     try:
         device = query("SELECT * FROM devices WHERE id = %s", (device_id,), fetchone=True)
         if not device:
             return
 
-        # Mise à jour de la date du dernier audit planifié
         query(
             "UPDATE audit_schedules SET last_run = NOW() WHERE id = %s",
             (schedule_id,)
         )
 
-        # Créer l'audit
         audit = query(
             """INSERT INTO audits (device_id, config_text, status, anomalies_found)
                VALUES (%s, %s, 'running', 0) RETURNING *""",
@@ -45,8 +43,8 @@ def _run_scheduled_audit(device_id: int, schedule_id: int):
 
         audit_id = audit["id"]
 
-        # Récupération SSH si disponible
         config_text = ""
+        ssh_error = None
         if device["ssh_username"] and device["ssh_password"]:
             try:
                 config_text = fetch_running_config(
@@ -57,21 +55,21 @@ def _run_scheduled_audit(device_id: int, schedule_id: int):
                     vendor=device["vendor"],
                     enable_password=device["enable_password"],
                 )
-            except Exception:
+            except Exception as ssh_exc:
                 config_text = ""
+                ssh_error = str(ssh_exc)
+                print(f"[Scheduler] SSH échoué device_id={device_id}: {ssh_error}")
 
         if not config_text.strip():
             query("UPDATE audits SET status = 'failed', completed_at = NOW() WHERE id = %s", (audit_id,))
             return
 
-        # Analyse NLP
         enabled_rules = get_enabled_rule_ids()
         anomalies = analyze_config(config_text, vendor=device.get("vendor", ""), enabled_rules=enabled_rules)
 
-        import json as _json
         for a in anomalies:
             if "commands" not in a:
-                a["commands"] = _json.dumps([])
+                a["commands"] = []
         _process_anomalies(audit_id, device, anomalies)
         _auto_resolve(audit_id, device_id)
 
@@ -84,10 +82,17 @@ def _run_scheduled_audit(device_id: int, schedule_id: int):
 
     except Exception as e:
         print(f"[Scheduler] Erreur audit planifié device_id={device_id}: {e}")
+        if audit_id:
+            try:
+                query(
+                    "UPDATE audits SET status='failed', completed_at=NOW() WHERE id=%s",
+                    (audit_id,)
+                )
+            except Exception:
+                pass
 
 
 def _init_db():
-    """Crée la table audit_schedules si elle n'existe pas."""
     query("""
         CREATE TABLE IF NOT EXISTS audit_schedules (
             id SERIAL PRIMARY KEY,
@@ -106,7 +111,6 @@ def _init_db():
 
 
 def _reload_jobs():
-    """Charge (ou recharge) tous les plannings actifs depuis la base."""
     scheduler.remove_all_jobs()
     rows = query("SELECT * FROM audit_schedules WHERE enabled = TRUE", fetchall=True)
     for row in (rows or []):
@@ -135,7 +139,6 @@ def _add_job(row):
 
 
 def start_scheduler():
-    """Démarre APScheduler au lancement de Flask."""
     try:
         _init_db()
     except Exception as e:
@@ -248,7 +251,6 @@ def delete_schedule(schedule_id):
 
 @scheduler_bp.route("/scheduler/<int:schedule_id>/run-now", methods=["POST"])
 def run_now(schedule_id):
-    """Lance immédiatement un audit planifié sans attendre l'heure prévue."""
     row = query("SELECT * FROM audit_schedules WHERE id = %s", (schedule_id,), fetchone=True)
     if not row:
         return jsonify({"error": "Planning introuvable."}), 404
@@ -257,93 +259,3 @@ def run_now(schedule_id):
         return jsonify({"success": True, "message": "Audit lancé manuellement."})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
-
-
-@scheduler_bp.route("/scheduler/<int:schedule_id>/correct-last", methods=["POST"])
-def correct_last(schedule_id):
-    """Corrige toutes les anomalies ouvertes du dernier audit de ce planning."""
-    row = query("SELECT * FROM audit_schedules WHERE id = %s", (schedule_id,), fetchone=True)
-    if not row:
-        return jsonify({"error": "Planning introuvable."}), 404
-
-    device = query("SELECT * FROM devices WHERE id = %s", (row["device_id"],), fetchone=True)
-    if not device:
-        return jsonify({"error": "Équipement introuvable."}), 404
-
-    if not device["ssh_username"] or not device["ssh_password"]:
-        return jsonify({"error": "Identifiants SSH non configurés."}), 400
-
-    last_audit = query(
-        "SELECT id FROM audits WHERE device_id = %s AND status = 'completed' ORDER BY completed_at DESC LIMIT 1",
-        (row["device_id"],), fetchone=True
-    )
-    if not last_audit:
-        return jsonify({"error": "Aucun audit complété trouvé pour cet équipement."}), 404
-
-    open_results = query(
-        "SELECT * FROM audit_results WHERE audit_id = %s AND status = 'open'",
-        (last_audit["id"],), fetchall=True
-    ) or []
-
-    if not open_results:
-        return jsonify({"success": True, "message": "Aucune anomalie ouverte à corriger.", "corrected": 0})
-
-    corrected = 0
-    errors = []
-
-    for result in open_results:
-        result_id = result["id"]
-        atype = result["anomaly_type"]
-
-        correction = query(
-            "SELECT * FROM corrections WHERE result_id = %s ORDER BY id DESC LIMIT 1",
-            (result_id,), fetchone=True
-        )
-
-        if not correction:
-            device_vendor = (device["vendor"] or "").lower()
-            matched = next((
-                r for r in RULES
-                if r.get("anomaly_type") == atype
-                and r.get("commands")
-                and any(v in device_vendor for v in r.get("vendors", []))
-            ), None)
-            if not matched:
-                errors.append(f"Pas de script pour '{atype}'")
-                continue
-            query(
-                "INSERT INTO corrections (result_id, device_id, correction_script, status) VALUES (%s, %s, %s, 'pending')",
-                (result_id, device["id"], json.dumps(matched["commands"]))
-            )
-            correction = query(
-                "SELECT * FROM corrections WHERE result_id = %s ORDER BY id DESC LIMIT 1",
-                (result_id,), fetchone=True
-            )
-
-        try:
-            script = correction["correction_script"]
-            commands = json.loads(script) if isinstance(script, str) else script
-            if not isinstance(commands, list):
-                commands = [commands]
-            push_config_to_device(
-                host=device["ip_address"],
-                port=device["ssh_port"] or 22,
-                username=device["ssh_username"],
-                password=device["ssh_password"],
-                vendor=device["vendor"],
-                commands=commands,
-                enable_password=device["enable_password"],
-            )
-            query("UPDATE corrections SET status = 'applied', applied_at = NOW() WHERE id = %s", (correction["id"],))
-            query("UPDATE audit_results SET status = 'corrected', corrected_at = NOW() WHERE id = %s", (result_id,))
-            corrected += 1
-        except Exception as e:
-            query("UPDATE corrections SET status = 'failed' WHERE id = %s", (correction["id"],))
-            errors.append(f"{atype}: {str(e)}")
-
-    return jsonify({
-        "success": True,
-        "corrected": corrected,
-        "total": len(open_results),
-        "errors": errors,
-    })
