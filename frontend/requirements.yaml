@@ -1,0 +1,21 @@
+packages:
+  "recharts": "Required for dashboard analytics charts (pie, bar charts)"
+  "framer-motion": "Required for smooth page transitions and micro-interactions"
+  "date-fns": "Required for human-readable date formatting across the dashboard"
+  "clsx": "Utility for constructing className strings conditionally"
+  "tailwind-merge": "Utility to efficiently merge Tailwind CSS classes"
+  "@hookform/resolvers": "Zod validation resolver for React Hook Form"
+  "react-hook-form": "Performant, flexible and extensible forms with easy-to-use validation"
+
+images:
+  - path: "artifacts/netguard/public/images/cyber-bg.png"
+    description: "Dark, abstract cybersecurity background with glowing cyan and deep blue data streams and subtle geometric grid patterns, highly professional and modern"
+    aspect_ratio: "16:9"
+  - path: "artifacts/netguard/public/images/logo-mark.png"
+    description: "Minimalist glowing neon cyan and blue shield combined with a network node icon, transparent background, cybersecurity theme"
+    aspect_ratio: "1:1"
+
+notes:
+  - Using generated Orval hooks from @workspace/api-client-react
+  - React Router is wouter
+  - Shadcn UI components are pre-existing in src/components/ui/

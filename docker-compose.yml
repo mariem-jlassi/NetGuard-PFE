@@ -1,0 +1,40 @@
+version: "3.9"
+
+services:
+
+  database:
+    image: postgres:16
+    container_name: netguard-db
+    environment:
+      POSTGRES_DB: netguard
+      POSTGRES_USER: netguard
+      POSTGRES_PASSWORD: netguard123
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  backend:
+    build: ./backend
+    container_name: netguard-backend
+    environment:
+      DATABASE_URL: postgresql://netguard:netguard123@database:5432/netguard
+      JWT_SECRET_KEY: netguard-secret-2024
+    ports:
+      - "8080:8080"
+    depends_on:
+      - database
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    container_name: netguard-frontend
+    ports:
+      - "5174:5174"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  pgdata:
