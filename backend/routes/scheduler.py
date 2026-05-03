@@ -79,6 +79,8 @@ def _run_scheduled_audit(device_id: int, schedule_id: int):
             (config_text, len(anomalies), audit_id)
         )
         query("UPDATE devices SET last_audit_at=NOW() WHERE id=%s", (device_id,))
+        return len(anomalies)
+        return len(anomalies)
 
     except Exception as e:
         print(f"[Scheduler] Erreur audit planifié device_id={device_id}: {e}")
@@ -90,6 +92,7 @@ def _run_scheduled_audit(device_id: int, schedule_id: int):
                 )
             except Exception:
                 pass
+    return -1
 
 
 def _init_db():
@@ -255,7 +258,7 @@ def run_now(schedule_id):
     if not row:
         return jsonify({"error": "Planning introuvable."}), 404
     try:
-        _run_scheduled_audit(row["device_id"], schedule_id)
-        return jsonify({"success": True, "message": "Audit lancé manuellement."})
+        anomalies_count = _run_scheduled_audit(row["device_id"], schedule_id)
+        return jsonify({"success": True, "message": "Audit lancé manuellement.", "anomaliesFound": anomalies_count})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500

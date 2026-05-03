@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/select"
 import {
   Calendar, Clock, Play, Plus, Trash2, ToggleLeft, ToggleRight,
-  Zap, AlertCircle, CheckCircle2, Server, Wrench,
+  Zap, AlertCircle, CheckCircle2, Server,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
@@ -80,36 +80,19 @@ export default function Scheduler() {
       if (!r.ok) throw new Error("Échec du lancement")
       return r.json()
     },
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       qc.invalidateQueries({ queryKey: ["/api/scheduler"] })
       qc.invalidateQueries({ queryKey: ["/api/audits"] })
       qc.invalidateQueries({ queryKey: ["/api/results"] })
       qc.invalidateQueries({ queryKey: ["/api/dashboard/stats"] })
-      toast({ title: "✅ Audit lancé manuellement", description: "L'audit Zero-Touch est en cours d'exécution." })
+      const count = data?.anomaliesFound ?? 0
+      const desc = count > 0
+        ? `${count} anomalie${count > 1 ? "s" : ""} détectée${count > 1 ? "s" : ""}.`
+        : "Aucune anomalie détectée. Équipement conforme ✅"
+      toast({ title: "✅ Audit lancé manuellement", description: desc })
     },
     onError: (err: any) => {
       toast({ title: "Erreur", description: err.message, variant: "destructive" })
-    },
-  })
-
-  const correctMutation = useMutation({
-    mutationFn: async (id: number) => {
-      const r = await fetch(`/api/scheduler/${id}/correct-last`, { method: "POST", headers: authHeader() })
-      const data = await r.json()
-      if (!r.ok) throw new Error(data.error || "Echec de la correction")
-      return data
-    },
-    onSuccess: (data) => {
-      qc.invalidateQueries({ queryKey: ["/api/results"] })
-      qc.invalidateQueries({ queryKey: ["/api/dashboard/stats"] })
-      if (data.corrected === 0) {
-        toast({ title: "Aucune anomalie a corriger", description: data.message || "Toutes les anomalies sont deja corrigees." })
-      } else {
-        toast({ title: `✅ ${data.corrected}/${data.total} anomalie(s) corrigee(s)`, description: data.errors?.length ? `Erreurs : ${data.errors.join(", ")}` : "Corrections appliquees via SSH." })
-      }
-    },
-    onError: (err: any) => {
-      toast({ title: "Erreur SSH", description: err.message, variant: "destructive" })
     },
   })
 
@@ -133,20 +116,18 @@ export default function Scheduler() {
         </Button>
       </div>
 
-      {/* Explication Zero-Touch */}
       <div className="mb-6 p-4 rounded-xl border border-primary/20 bg-primary/5 flex gap-4">
         <Zap className="w-5 h-5 text-primary shrink-0 mt-0.5" />
         <div>
           <p className="text-sm font-semibold text-foreground">Automatisation Zero-Touch</p>
           <p className="text-xs text-muted-foreground mt-1">
-            Les audits planifiés se connectent automatiquement en SSH à l'heure définie, 
-            récupèrent la configuration de l'équipement, analysent les anomalies via les modèles NLP 
+            Les audits planifiés se connectent automatiquement en SSH à l'heure définie,
+            récupèrent la configuration de l'équipement, analysent les anomalies via les modèles NLP
             et génèrent les corrections — sans aucune intervention humaine.
           </p>
         </div>
       </div>
 
-      {/* Formulaire de création */}
       {isFormOpen && (
         <Card className="glass-panel border-primary/30 mb-6">
           <CardHeader>
@@ -171,7 +152,6 @@ export default function Scheduler() {
         </Card>
       )}
 
-      {/* Liste des plannings */}
       {isLoading ? (
         <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
           {[1, 2, 3].map((i) => (
@@ -185,10 +165,7 @@ export default function Scheduler() {
           <p className="text-muted-foreground mt-2 text-sm">
             Créez un premier planning pour activer les audits automatiques Zero-Touch.
           </p>
-          <Button
-            onClick={() => setIsFormOpen(true)}
-            className="mt-6 bg-primary text-primary-foreground"
-          >
+          <Button onClick={() => setIsFormOpen(true)} className="mt-6 bg-primary text-primary-foreground">
             <Plus className="w-4 h-4 mr-2" />
             Créer un planning
           </Button>
@@ -202,13 +179,7 @@ export default function Scheduler() {
                 !schedule.enabled ? "opacity-60" : ""
               }`}
             >
-              {/* Barre de statut */}
-              <div
-                className={`absolute top-0 left-0 w-full h-0.5 ${
-                  schedule.enabled ? "bg-primary" : "bg-muted"
-                }`}
-              />
-
+              <div className={`absolute top-0 left-0 w-full h-0.5 ${schedule.enabled ? "bg-primary" : "bg-muted"}`} />
               <CardContent className="p-5">
                 <div className="flex justify-between items-start mb-3">
                   <div className="flex items-center gap-2">
@@ -227,9 +198,7 @@ export default function Scheduler() {
                   <Badge
                     variant="outline"
                     className={`text-[10px] ${
-                      schedule.enabled
-                        ? "border-primary/40 text-primary"
-                        : "border-muted-foreground/30 text-muted-foreground"
+                      schedule.enabled ? "border-primary/40 text-primary" : "border-muted-foreground/30 text-muted-foreground"
                     }`}
                   >
                     {schedule.enabled ? "Actif" : "Inactif"}
@@ -243,16 +212,12 @@ export default function Scheduler() {
                       {FREQ_FR[schedule.frequency] || schedule.frequency}
                     </span>
                     {schedule.frequency !== "hourly" && (
-                      <span>
-                        à {String(schedule.hour).padStart(2, "0")}:
-                        {String(schedule.minute).padStart(2, "0")}
-                      </span>
+                      <span>à {String(schedule.hour).padStart(2, "0")}:{String(schedule.minute).padStart(2, "0")}</span>
                     )}
                     {schedule.frequency === "weekly" && (
                       <span>({DAY_FR[schedule.dayOfWeek] || `Jour ${schedule.dayOfWeek}`})</span>
                     )}
                   </div>
-
                   {schedule.lastRun ? (
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
@@ -272,29 +237,12 @@ export default function Scheduler() {
                     variant="outline"
                     className="flex-1 text-xs border-primary/40 text-primary hover:bg-primary/10"
                     onClick={() => runNowMutation.mutate(schedule.id)}
-                    disabled={runNowMutation.isPending || correctMutation.isPending}
+                    disabled={runNowMutation.isPending}
                     title="Lancer l'audit immédiatement"
                   >
                     <Play className="w-3 h-3 mr-1" />
                     {runNowMutation.isPending ? "..." : "Lancer"}
                   </Button>
-                  {schedule.lastRun && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="flex-1 text-xs border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10"
-                      onClick={() => {
-                        if (confirm("Appliquer les corrections SSH sur toutes les anomalies ouvertes ?")) {
-                          correctMutation.mutate(schedule.id)
-                        }
-                      }}
-                      disabled={correctMutation.isPending || runNowMutation.isPending}
-                      title="Corriger les anomalies du dernier audit"
-                    >
-                      <Wrench className="w-3 h-3 mr-1" />
-                      {correctMutation.isPending ? "..." : "Corriger"}
-                    </Button>
-                  )}
                   <Button
                     size="sm"
                     variant="ghost"
@@ -312,9 +260,7 @@ export default function Scheduler() {
                     size="sm"
                     variant="ghost"
                     className="px-2 hover:text-destructive hover:bg-destructive/10"
-                    onClick={() => {
-                      if (confirm("Supprimer ce planning ?")) deleteMutation.mutate(schedule.id)
-                    }}
+                    onClick={() => { if (confirm("Supprimer ce planning ?")) deleteMutation.mutate(schedule.id) }}
                     disabled={deleteMutation.isPending}
                     title="Supprimer"
                   >
@@ -331,14 +277,8 @@ export default function Scheduler() {
 }
 
 function ScheduleForm({
-  devices,
-  onSuccess,
-  onCancel,
-}: {
-  devices: any[]
-  onSuccess: () => void
-  onCancel: () => void
-}) {
+  devices, onSuccess, onCancel,
+}: { devices: any[]; onSuccess: () => void; onCancel: () => void }) {
   const { toast } = useToast()
   const [frequency, setFrequency] = useState("daily")
   const [submitting, setSubmitting] = useState(false)
@@ -351,7 +291,6 @@ function ScheduleForm({
       toast({ title: "Erreur", description: "Sélectionnez un équipement.", variant: "destructive" })
       return
     }
-
     setSubmitting(true)
     try {
       const payload = {
@@ -395,32 +334,21 @@ function ScheduleForm({
                   <span className="flex items-center gap-2">
                     {d.name}
                     <span className="text-xs text-muted-foreground font-mono">{d.ipAddress}</span>
-                    {!d.sshUsername && (
-                      <span className="text-[10px] text-yellow-500">(SSH non configuré)</span>
-                    )}
+                    {!d.sshUsername && <span className="text-[10px] text-yellow-500">(SSH non configuré)</span>}
                   </span>
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
         </div>
-
         <div className="space-y-2 col-span-2">
           <Label htmlFor="label">Libellé (optionnel)</Label>
-          <Input
-            id="label"
-            name="label"
-            placeholder="ex. Audit nuit CORE-SW-01"
-            className="bg-background"
-          />
+          <Input id="label" name="label" placeholder="ex. Audit nuit CORE-SW-01" className="bg-background" />
         </div>
-
         <div className="space-y-2 col-span-2">
           <Label>Fréquence</Label>
           <Select value={frequency} onValueChange={setFrequency}>
-            <SelectTrigger className="bg-background border-border/50">
-              <SelectValue />
-            </SelectTrigger>
+            <SelectTrigger className="bg-background border-border/50"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="hourly">Toutes les heures</SelectItem>
               <SelectItem value="daily">Chaque jour</SelectItem>
@@ -428,43 +356,23 @@ function ScheduleForm({
             </SelectContent>
           </Select>
         </div>
-
         {frequency !== "hourly" && (
           <>
             <div className="space-y-2">
               <Label htmlFor="hour">Heure (0–23)</Label>
-              <Input
-                id="hour"
-                name="hour"
-                type="number"
-                min={0}
-                max={23}
-                defaultValue={2}
-                className="bg-background"
-              />
+              <Input id="hour" name="hour" type="number" min={0} max={23} defaultValue={2} className="bg-background" />
             </div>
             <div className="space-y-2">
               <Label htmlFor="minute">Minute (0–59)</Label>
-              <Input
-                id="minute"
-                name="minute"
-                type="number"
-                min={0}
-                max={59}
-                defaultValue={0}
-                className="bg-background"
-              />
+              <Input id="minute" name="minute" type="number" min={0} max={59} defaultValue={0} className="bg-background" />
             </div>
           </>
         )}
-
         {frequency === "weekly" && (
           <div className="space-y-2 col-span-2">
             <Label>Jour de la semaine</Label>
             <Select name="dayOfWeek" defaultValue="1">
-              <SelectTrigger className="bg-background border-border/50">
-                <SelectValue />
-              </SelectTrigger>
+              <SelectTrigger className="bg-background border-border/50"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {Object.entries(DAY_FR).map(([val, label]) => (
                   <SelectItem key={val} value={val}>{label}</SelectItem>
@@ -474,16 +382,9 @@ function ScheduleForm({
           </div>
         )}
       </div>
-
       <div className="flex justify-end gap-2 pt-2">
-        <Button type="button" variant="outline" onClick={onCancel}>
-          Annuler
-        </Button>
-        <Button
-          type="submit"
-          disabled={submitting || devices.length === 0}
-          className="bg-primary text-primary-foreground"
-        >
+        <Button type="button" variant="outline" onClick={onCancel}>Annuler</Button>
+        <Button type="submit" disabled={submitting || devices.length === 0} className="bg-primary text-primary-foreground">
           {submitting ? "Création..." : "Créer le planning"}
         </Button>
       </div>

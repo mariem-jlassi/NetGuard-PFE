@@ -432,7 +432,7 @@ RULES = [
         "severity": "medium",
         "anomaly_type": "weak_trunk",
         "vendors": ["cisco"],
-        "pattern": re.compile(r"switchport\s+mode\s+trunk", re.IGNORECASE | re.MULTILINE),
+        "pattern": re.compile(r"switchport\s+trunk\s+allowed\s+vlan\s+all", re.IGNORECASE | re.MULTILINE),
         "negative": False,
         "suggestion": "Restreindre la liste des VLANs autorises sur chaque lien trunk (eviter 'allowed vlan all').",
         "commands": ["interface range GigabitEthernet1/0-1", "switchport trunk encapsulation dot1q", "switchport mode trunk", "switchport trunk allowed vlan 10,20,30,99", "end"],
@@ -446,7 +446,7 @@ RULES = [
         "pattern": re.compile(r"crypto\s+(?:isakmp|ikev1)\s+policy"),
         "negative": False,
         "suggestion": "Migrer la configuration VPN de IKEv1 (crypto isakmp) vers IKEv2 (crypto ikev2 policy).",
-        "commands": ["crypto ikev2 policy 10", "encryption aes-cbc-256", "integrity sha256", "group 14", "exit"],
+        "commands": ["no crypto isakmp policy 1", "no crypto isakmp policy 10", "no crypto isakmp policy 100", "crypto ikev2 policy 10", "encryption aes-256", "integrity sha256", "group 14", "exit"],
     },
     {
         "id": "NO_DHCP_SNOOPING",

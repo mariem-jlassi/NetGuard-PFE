@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.pyo
+backend/venv/
+backend/.env
+*.log
+.DS_Store
+node_modules/
+frontend/dist/
+patch_scheduler_ssh.py

@@ -106,6 +106,51 @@ def push_config_to_device(host: str, port: int, username: str, password: str,
         client.close()
 
 
+
+
+def push_all_corrections_batch(host, port, username, password, vendor, all_commands, enable_password=None):
+    import time, paramiko
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    try:
+        client.connect(hostname=host, port=port, username=username, password=password,
+            timeout=10, banner_timeout=10, look_for_keys=False, allow_agent=False,
+            disabled_algorithms=dict(pubkeys=["rsa-sha2-256","rsa-sha2-512"]))
+        shell = client.invoke_shell()
+        shell.settimeout(15)
+        time.sleep(1.2)
+        output = ""
+        def send(cmd, wait=0.5):
+            nonlocal output
+            shell.send(cmd + "\n")
+            time.sleep(wait)
+            while shell.recv_ready():
+                output += shell.recv(4096).decode("utf-8", errors="replace")
+        v = vendor.lower()
+        if "fortinet" in v or "fortigate" in v:
+            for cmds in all_commands:
+                for cmd in cmds: send(cmd, 0.6)
+            time.sleep(0.5)
+        else:
+            if enable_password:
+                send("enable", 0.5); time.sleep(0.8)
+                buf = ""
+                while shell.recv_ready(): buf += shell.recv(4096).decode("utf-8",errors="replace")
+                if "assword" in buf: send(enable_password, 0.8)
+            send("terminal length 0", 0.3)
+            send("configure terminal", 0.5)
+            skip = {"end","write memory","wr mem","configure terminal"}
+            for cmds in all_commands:
+                for cmd in cmds:
+                    if cmd.strip().lower() not in skip: send(cmd, 0.6)
+            send("end", 0.8)
+            send("write memory", 5.0)
+            time.sleep(3.0)
+        shell.close()
+        return output
+    finally:
+        client.close()
+
 def fetch_running_config(host: str, port: int, username: str, password: str,
                           vendor: str, enable_password: str = None) -> str:
     """
