@@ -91,7 +91,7 @@ def push_config_to_device(host: str, port: int, username: str, password: str,
                     send(cmd, 0.8)
             else:
                 send("configure terminal", 0.5)
-                skip = {"end", "write memory", "wr mem"}
+                skip = {"end", "write memory", "wr mem", "conf t", "configure terminal", "configure t", "config t", "config terminal"}
                 for cmd in commands:
                     if cmd.strip().lower() not in skip:
                         send(cmd, 0.6)
@@ -258,6 +258,8 @@ def test_ssh_connection(host: str, port: int, username: str, password: str) -> d
     except paramiko.SSHException as e:
         return {"success": False, "error": f"Erreur SSH : {str(e)}"}
     except Exception as e:
-        return {"success": False, "error": f"Impossible de joindre l'équipement : {str(e)}"}
+        import re as _re
+        msg = _re.sub(r"\[Errno\s*\w*\]\s*", "", str(e)).strip()
+        return {"success": False, "error": f"Impossible de joindre l'équipement : {msg}"}
     finally:
         client.close()

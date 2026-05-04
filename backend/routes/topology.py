@@ -32,6 +32,7 @@ def run_ssh_command(host, port, username, password, command, vendor="cisco"):
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     output = ""
+    connected = False
     try:
         client.connect(
             hostname=host, port=port,
@@ -77,8 +78,9 @@ def run_ssh_command(host, port, username, password, command, vendor="cisco"):
                 time.sleep(0.1)
 
         shell.close()
-    except Exception:
-        pass
+    except Exception as e:
+        if not connected:
+            raise
     finally:
         client.close()
     return output
@@ -325,7 +327,8 @@ def get_topology():
 
             return (device, neighbors, raw_output, None)
         except Exception as e:
-            return (device, [], "", str(e))
+            clean = re.sub(r"\[Errno\s*\w*\]\s*", "", str(e)).strip()
+            return (device, [], "", clean)
 
     if reachable:
         with ThreadPoolExecutor(max_workers=min(8, len(reachable))) as ex:
@@ -353,6 +356,12 @@ def get_topology():
                     "neighbors":      [],
                     "neighborsFound": 0,
                 })
+
+    # Mettre à jour hasCredentials selon le succès SSH réel
+    ssh_success_map = {str(r["deviceId"]): r["success"] for r in ssh_results}
+    for node in topo_nodes:
+        if node["hasCredentials"] and not ssh_success_map.get(node["id"], False):
+            node["hasCredentials"] = False
 
     # Injecter les voisins dans les nœuds
     for node in topo_nodes:
