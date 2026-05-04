@@ -4,7 +4,7 @@
 //  Couleur : CDP=bleu | LLDP=vert | ARP=orange
 // ============================================================
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { AppLayout } from "@/components/layout/AppLayout"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -373,6 +373,22 @@ export default function Topology() {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([])
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
 
+  const STORAGE_KEY = "netguard-topology-positions"
+  const saveTimer   = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const onNodesChangeWithSave = useCallback((changes: any) => {
+    onNodesChange(changes)
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(() => {
+      setNodes(ns => {
+        const saved: Record<string, { x: number; y: number }> = {}
+        ns.forEach(n => { saved[n.id] = n.position })
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(saved))
+        return ns
+      })
+    }, 500)
+  }, [onNodesChange, setNodes])
+
   const fetchTopology = async () => {
     setLoading(true)
     setSelectedNode(null)
@@ -386,7 +402,16 @@ export default function Topology() {
       }
 
       const layoutNodes = buildLayout(data.nodes ?? [])
-      const nodeMap     = new Map(layoutNodes.map(n => [n.id, n.position]))
+
+      // Restaurer les positions sauvegardées
+      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}")
+      if (Object.keys(saved).length > 0) {
+        layoutNodes.forEach(n => {
+          if (saved[n.id]) n.position = saved[n.id]
+        })
+      }
+
+      const nodeMap = new Map(layoutNodes.map(n => [n.id, n.position]))
 
       setTopoNodes(data.nodes ?? [])
       setNodes(layoutNodes)
@@ -504,7 +529,7 @@ export default function Topology() {
             <ReactFlow
               nodes={nodes}
               edges={edges}
-              onNodesChange={onNodesChange}
+              onNodesChange={onNodesChangeWithSave}
               onEdgesChange={onEdgesChange}
               onNodeClick={handleNodeClick}
               nodeTypes={nodeTypes}
@@ -513,10 +538,17 @@ export default function Topology() {
               fitViewOptions={{ padding: 0.25 }}
               colorMode="dark"
               proOptions={{ hideAttribution: true }}
+              panOnDrag={true}
+              panOnScroll={false}
+              zoomOnScroll={true}
+              zoomOnPinch={true}
+              zoomOnDoubleClick={false}
+              minZoom={0.2}
+              maxZoom={3}
               style={{ background: "transparent", height: "100%" }}
             >
               <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="#1e293b" />
-              <Controls className="!bg-card/80 !border-border/50 !shadow-none" />
+              <Controls className="!bg-card/80 !border-border/50 !shadow-none" showInteractive={false} />
             </ReactFlow>
           </div>
         </Card>
