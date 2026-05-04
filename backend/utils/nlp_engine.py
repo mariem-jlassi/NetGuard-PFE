@@ -484,7 +484,6 @@ def analyze_config(config_text: str, vendor: str = "", enabled_rules: set = None
     - vendor        : filtre les règles par fabricant
     - enabled_rules : ensemble des IDs de règles actives (None = toutes actives)
     """
-    import json
     anomalies = []
 
     for rule in RULES:
@@ -511,7 +510,7 @@ def analyze_config(config_text: str, vendor: str = "", enabled_rules: set = None
                 "description": rule["description"],
                 "affected_config": affected,
                 "suggested_fix": rule["suggestion"],
-                "commands": json.dumps(rule.get("commands", [])),
+                "commands": rule.get("commands", []),
                 "status": "open",
             })
 
