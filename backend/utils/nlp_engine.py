@@ -8,9 +8,13 @@ Chaque règle peut cibler un vendeur spécifique via le champ 'vendors'.
 import re
 
 def _check_trunk_insecure(config_text: str) -> tuple:
-    interface_blocks = re.split(r'(?=^interface\s)', config_text, flags=re.MULTILINE)
+    config_text = config_text.replace('\r\n', '\n').replace('\r', '\n')
+    interface_blocks = re.split(r'\n(?=interface\s)', config_text)
     insecure_ifaces = []
     for block in interface_blocks:
+        block = block.strip()
+        if not block.startswith('interface'):
+            continue
         if re.search(r'switchport\s+mode\s+trunk', block, re.IGNORECASE):
             has_restriction = re.search(r'switchport\s+trunk\s+allowed\s+vlan\s+\d', block, re.IGNORECASE)
             has_explicit_all = re.search(r'switchport\s+trunk\s+allowed\s+vlan\s+all', block, re.IGNORECASE)
@@ -451,7 +455,7 @@ RULES = [
         "negative": False,
         "custom_check": _check_trunk_insecure,
         "suggestion": "Restreindre la liste des VLANs autorises sur chaque lien trunk (eviter 'allowed vlan all').",
-        "commands": ["interface range GigabitEthernet1/0-1", "switchport trunk encapsulation dot1q", "switchport mode trunk", "switchport trunk allowed vlan 10,20,30,99", "end"],
+        "commands": ["interface GigabitEthernet0/3", "switchport trunk allowed vlan 10,20,30,99", "exit"],
     },
     {
         "id": "WEAK_VPN_CISCO",
