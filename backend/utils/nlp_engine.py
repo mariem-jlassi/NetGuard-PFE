@@ -7,6 +7,21 @@ Chaque règle peut cibler un vendeur spécifique via le champ 'vendors'.
 
 import re
 
+def _check_trunk_insecure(config_text: str) -> tuple:
+    interface_blocks = re.split(r'(?=^interface\s)', config_text, flags=re.MULTILINE)
+    insecure_ifaces = []
+    for block in interface_blocks:
+        if re.search(r'switchport\s+mode\s+trunk', block, re.IGNORECASE):
+            has_restriction = re.search(r'switchport\s+trunk\s+allowed\s+vlan\s+\d', block, re.IGNORECASE)
+            has_explicit_all = re.search(r'switchport\s+trunk\s+allowed\s+vlan\s+all', block, re.IGNORECASE)
+            if not has_restriction or has_explicit_all:
+                iface_match = re.match(r'interface\s+(\S+)', block)
+                if iface_match:
+                    insecure_ifaces.append(iface_match.group(1))
+    if insecure_ifaces:
+        return True, "Trunk sans restriction: " + ", ".join(insecure_ifaces)
+    return False, ""
+
 
 RULES = [
 
@@ -434,6 +449,7 @@ RULES = [
         "vendors": ["cisco"],
         "pattern": re.compile(r"switchport\s+trunk\s+allowed\s+vlan\s+all", re.IGNORECASE | re.MULTILINE),
         "negative": False,
+        "custom_check": _check_trunk_insecure,
         "suggestion": "Restreindre la liste des VLANs autorises sur chaque lien trunk (eviter 'allowed vlan all').",
         "commands": ["interface range GigabitEthernet1/0-1", "switchport trunk encapsulation dot1q", "switchport mode trunk", "switchport trunk allowed vlan 10,20,30,99", "end"],
     },
@@ -492,18 +508,23 @@ def analyze_config(config_text: str, vendor: str = "", enabled_rules: set = None
         if not _match_vendor(rule, vendor):
             continue
 
-        matches = rule["pattern"].search(config_text)
-        triggered = bool(matches)
+        if "custom_check" in rule:
+            triggered, custom_affected = rule["custom_check"](config_text)
+        else:
+            matches = rule["pattern"].search(config_text)
+            triggered = bool(matches)
+            custom_affected = None
 
-        if rule["negative"]:
-            triggered = not triggered
+            if rule["negative"]:
+                triggered = not triggered
 
         if triggered:
-            affected = (
-                extract_affected_line(config_text, rule["pattern"])
-                if not rule["negative"]
-                else "Configuration manquante"
-            )
+            if custom_affected:
+                affected = custom_affected
+            elif rule.get("negative"):
+                affected = "Configuration manquante"
+            else:
+                affected = extract_affected_line(config_text, rule["pattern"])
             anomalies.append({
                 "anomaly_type": rule["anomaly_type"],
                 "severity": rule["severity"],
