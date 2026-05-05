@@ -78,7 +78,7 @@ def get_stats():
            WHERE ar.status = 'open'
            GROUP BY d.name
            ORDER BY count DESC
-           LIMIT 8""",
+           LIMIT 5""",
         fetchall=True
     ) or []
 
